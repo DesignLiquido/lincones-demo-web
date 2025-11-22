@@ -1,0 +1,30 @@
+{
+  "name": "lincones-demo-web",
+  "version": "1.0.0",
+  "description": "Demonstração de LinConEs no navegador de internet, usando IndexedDB.",
+  "main": "index.html",
+  "homepage": "https://designliquido.github.io/lincones-demo-web",
+  "scripts": {
+    "deploy": "gh-pages -d .",
+    "predeploy": "echo 'Preparando deploy...'",
+    "publicar": "yarn deploy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DesignLiquido/lincones-demo-web.git"
+  },
+  "keywords": [
+    "lincones",
+    "sql",
+    "português",
+    "portuguese",
+    "database",
+    "indexeddb",
+    "educação"
+  ],
+  "author": "Design Líquido",
+  "license": "MIT",
+  "devDependencies": {
+    "gh-pages": "^6.1.1"
+  }
+}
