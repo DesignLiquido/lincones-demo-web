@@ -133,7 +133,10 @@
 <body>
     <div class="header">
         <h1>SQL IndexedDB Editor</h1>
-        <button class="run-btn" onclick="executeSQL()">Run Query (Ctrl+Enter)</button>
+        <div>
+            <button class="run-btn" onclick="executeSQL()">Run Query (Ctrl+Enter)</button>
+            <button class="run-btn" onclick="resetDatabase()" style="background: #a1260d; margin-left: 8px;">Reset Database</button>
+        </div>
     </div>
     <div class="container">
         <div class="editor-panel">
@@ -184,22 +187,49 @@
         });
 
         // Initialize IndexedDB
-        let dbVersion = 1;
+        let dbVersion = null;
         
         function initDB() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open('SQLDatabase', dbVersion);
+                // First, open without version to get current version
+                const checkRequest = indexedDB.open('SQLDatabase');
                 
-                request.onerror = () => reject(request.error);
-                request.onsuccess = () => {
-                    db = request.result;
-                    dbVersion = db.version; // Track current version
-                    resolve(db);
+                checkRequest.onsuccess = () => {
+                    const tempDb = checkRequest.result;
+                    dbVersion = tempDb.version;
+                    tempDb.close();
+                    
+                    // Now open with the correct version
+                    const request = indexedDB.open('SQLDatabase', dbVersion);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => {
+                        db = request.result;
+                        dbVersion = db.version;
+                        resolve(db);
+                    };
+                    
+                    request.onupgradeneeded = (event) => {
+                        db = event.target.result;
+                        dbVersion = db.version;
+                    };
                 };
                 
-                request.onupgradeneeded = (event) => {
-                    db = event.target.result;
-                    dbVersion = db.version; // Track current version
+                checkRequest.onerror = () => {
+                    // Database doesn't exist, create it
+                    const request = indexedDB.open('SQLDatabase', 1);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => {
+                        db = request.result;
+                        dbVersion = db.version;
+                        resolve(db);
+                    };
+                    
+                    request.onupgradeneeded = (event) => {
+                        db = event.target.result;
+                        dbVersion = db.version;
+                    };
                 };
             });
         }
@@ -277,10 +307,14 @@
         }
 
         async function handleCreateTable(sql) {
-            const match = sql.match(/CREATE TABLE\s+(\w+)/i);
+            const match = sql.match(/CREATE TABLE\s+(\w+)\s*\((.*?)\)/i);
             if (!match) throw new Error('Invalid CREATE TABLE syntax');
             
             const tableName = match[1];
+            const columnsStr = match[2];
+            
+            // Parse column names
+            const columns = columnsStr.split(',').map(col => col.trim().split(/\s+/)[0]);
             
             if (db.objectStoreNames.contains(tableName)) {
                 throw new Error(`Table ${tableName} already exists`);
@@ -293,13 +327,18 @@
             return new Promise((resolve, reject) => {
                 request.onupgradeneeded = (event) => {
                     db = event.target.result;
-                    db.createObjectStore(tableName, { autoIncrement: true });
+                    const store = db.createObjectStore(tableName, { autoIncrement: true });
+                    // Store column schema in metadata
+                    store.put({ _schema: columns, _isMetadata: true }, '_metadata');
                 };
                 request.onsuccess = () => {
                     db = request.result;
                     resolve();
                 };
                 request.onerror = () => reject(request.error);
+                request.onblocked = () => {
+                    console.warn('Database upgrade blocked');
+                };
             });
         }
 
@@ -342,7 +381,17 @@
             
             return new Promise((resolve, reject) => {
                 const request = store.getAll();
-                request.onsuccess = () => resolve(request.result);
+                request.onsuccess = () => {
+                    const allData = request.result;
+                    // Filter out metadata
+                    const data = allData.filter(item => !item._isMetadata);
+                    
+                    // Get schema from metadata
+                    const metadata = allData.find(item => item._isMetadata);
+                    const schema = metadata ? metadata._schema : null;
+                    
+                    resolve({ data, schema });
+                };
                 request.onerror = () => reject(request.error);
             });
         }
@@ -387,28 +436,71 @@
             });
         }
 
+        async function resetDatabase() {
+            if (!confirm('Are you sure you want to delete the entire database? This cannot be undone.')) {
+                return;
+            }
+            
+            if (db) {
+                db.close();
+            }
+            
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.deleteDatabase('SQLDatabase');
+                
+                request.onsuccess = () => {
+                    dbVersion = null;
+                    db = null;
+                    document.getElementById('results').innerHTML = `
+                        <div class="result-message success">✓ Database reset successfully</div>
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚡</div>
+                            <p>Type your SQL query and press "Run Query" to see results</p>
+                        </div>
+                    `;
+                    resolve();
+                };
+                
+                request.onerror = () => {
+                    document.getElementById('results').innerHTML = `
+                        <div class="result-message error">Error resetting database: ${request.error}</div>
+                    `;
+                    reject(request.error);
+                };
+                
+                request.onblocked = () => {
+                    document.getElementById('results').innerHTML = `
+                        <div class="result-message error">Database reset blocked. Please close all other tabs with this page open.</div>
+                    `;
+                };
+            });
+        }
+
         function displayResults(results, sql) {
             const resultsDiv = document.getElementById('results');
             
-            if (!results || results.length === 0) {
+            const { data, schema } = results;
+            
+            if (!data || data.length === 0) {
                 resultsDiv.innerHTML = `<div class="result-message success">✓ Query executed successfully (0 rows)<br><code>${sql}</code></div>`;
                 return;
             }
             
+            // Use schema if available, otherwise generate column names
+            const columns = schema || (data[0].values ? data[0].values.map((_, i) => `Column ${i + 1}`) : []);
+            
             const html = `
-                <div class="result-message success">✓ Query executed successfully (${results.length} row${results.length > 1 ? 's' : ''})<br><code>${sql}</code></div>
+                <div class="result-message success">✓ Query executed successfully (${data.length} row${data.length > 1 ? 's' : ''})<br><code>${sql}</code></div>
                 <table>
                     <thead>
                         <tr>
-                            <th>ID</th>
-                            ${Object.keys(results[0].values || {}).map((_, i) => `<th>Column ${i + 1}</th>`).join('')}
+                            ${columns.map(col => `<th>${col}</th>`).join('')}
                         </tr>
                     </thead>
                     <tbody>
-                        ${results.map(row => `
+                        ${data.map(row => `
                             <tr>
-                                <td>${row.values ? row.values[0] || '-' : '-'}</td>
-                                ${Array.isArray(row.values) ? row.values.slice(1).map(val => `<td>${val !== undefined ? val : '-'}</td>`).join('') : ''}
+                                ${Array.isArray(row.values) ? row.values.map(val => `<td>${val !== undefined && val !== null ? val : '-'}</td>`).join('') : ''}
                             </tr>
                         `).join('')}
                     </tbody>
