@@ -48,6 +48,13 @@
         .run-btn:active {
             background: #0d5a8f;
         }
+        .reset-btn {
+            background: #a1260d;
+            margin-left: 8px;
+        }
+        .reset-btn:hover {
+            background: #c9371f;
+        }
         .container {
             display: flex;
             flex: 1;
@@ -135,7 +142,7 @@
         <h1>SQL IndexedDB Editor</h1>
         <div>
             <button class="run-btn" onclick="executeSQL()">Run Query (Ctrl+Enter)</button>
-            <button class="run-btn" onclick="resetDatabase()" style="background: #a1260d; margin-left: 8px;">Reset Database</button>
+            <button class="run-btn reset-btn" onclick="resetDatabase()">Reset Database</button>
         </div>
     </div>
     <div class="container">
@@ -154,10 +161,12 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
     <script>
         let editor;
-        let db;
+        let db = new Dexie('SQLDatabase');
+        let tableSchemas = {}; // Store column names for each table
 
         // Initialize Monaco Editor
         require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
@@ -186,52 +195,22 @@
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, executeSQL);
         });
 
-        // Initialize IndexedDB
-        let dbVersion = null;
-        
-        function initDB() {
-            return new Promise((resolve, reject) => {
-                // First, open without version to get current version
-                const checkRequest = indexedDB.open('SQLDatabase');
-                
-                checkRequest.onsuccess = () => {
-                    const tempDb = checkRequest.result;
-                    dbVersion = tempDb.version;
-                    tempDb.close();
-                    
-                    // Now open with the correct version
-                    const request = indexedDB.open('SQLDatabase', dbVersion);
-                    
-                    request.onerror = () => reject(request.error);
-                    request.onsuccess = () => {
-                        db = request.result;
-                        dbVersion = db.version;
-                        resolve(db);
-                    };
-                    
-                    request.onupgradeneeded = (event) => {
-                        db = event.target.result;
-                        dbVersion = db.version;
-                    };
-                };
-                
-                checkRequest.onerror = () => {
-                    // Database doesn't exist, create it
-                    const request = indexedDB.open('SQLDatabase', 1);
-                    
-                    request.onerror = () => reject(request.error);
-                    request.onsuccess = () => {
-                        db = request.result;
-                        dbVersion = db.version;
-                        resolve(db);
-                    };
-                    
-                    request.onupgradeneeded = (event) => {
-                        db = event.target.result;
-                        dbVersion = db.version;
-                    };
-                };
-            });
+        // Initialize existing tables and schemas
+        async function initializeDB() {
+            await db.open();
+            
+            // Check if we have stored schemas
+            if (db.tables.length > 0) {
+                const schemasTable = db.table('_schemas');
+                if (schemasTable) {
+                    const schemas = await schemasTable.toArray();
+                    schemas.forEach(s => {
+                        if (s.tableName) {
+                            tableSchemas[s.tableName] = s.columns;
+                        }
+                    });
+                }
+            }
         }
 
         // Simple SQL parser and executor
@@ -277,8 +256,6 @@
             resultsDiv.innerHTML = '<div class="result-message">Executing...</div>';
 
             try {
-                await initDB();
-                
                 // Parse SQL command
                 const upperSQL = sql.toUpperCase();
                 
@@ -316,30 +293,27 @@
             // Parse column names
             const columns = columnsStr.split(',').map(col => col.trim().split(/\s+/)[0]);
             
-            if (db.objectStoreNames.contains(tableName)) {
-                throw new Error(`Table ${tableName} already exists`);
+            // Store schema
+            tableSchemas[tableName] = columns;
+            
+            // Close and recreate database with new schema
+            db.close();
+            
+            const version = db.verno + 1;
+            db = new Dexie('SQLDatabase');
+            
+            // Build schema object for all tables
+            const schemaObj = { '_schemas': 'tableName' };
+            for (let table in tableSchemas) {
+                schemaObj[table] = '++id';
             }
             
-            db.close();
-            dbVersion++; // Increment our tracked version
-            const request = indexedDB.open('SQLDatabase', dbVersion);
+            db.version(version).stores(schemaObj);
             
-            return new Promise((resolve, reject) => {
-                request.onupgradeneeded = (event) => {
-                    db = event.target.result;
-                    const store = db.createObjectStore(tableName, { autoIncrement: true });
-                    // Store column schema in metadata
-                    store.put({ _schema: columns, _isMetadata: true }, '_metadata');
-                };
-                request.onsuccess = () => {
-                    db = request.result;
-                    resolve();
-                };
-                request.onerror = () => reject(request.error);
-                request.onblocked = () => {
-                    console.warn('Database upgrade blocked');
-                };
-            });
+            await db.open();
+            
+            // Save schema to _schemas table
+            await db.table('_schemas').put({ tableName, columns });
         }
 
         async function handleInsert(sql) {
@@ -356,14 +330,17 @@
                 return isNaN(v) ? v : Number(v);
             });
             
-            const transaction = db.transaction([tableName], 'readwrite');
-            const store = transaction.objectStore(tableName);
+            const table = db.table(tableName);
+            if (!table) throw new Error(`Table ${tableName} does not exist`);
             
-            return new Promise((resolve, reject) => {
-                const request = store.add({ values });
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
+            // Convert values array to object with column names
+            const columns = tableSchemas[tableName] || [];
+            const row = {};
+            columns.forEach((col, i) => {
+                row[col] = values[i];
             });
+            
+            await table.add(row);
         }
 
         async function handleSelect(sql) {
@@ -372,28 +349,13 @@
             
             const tableName = match[1];
             
-            if (!db.objectStoreNames.contains(tableName)) {
-                throw new Error(`Table ${tableName} does not exist`);
-            }
+            const table = db.table(tableName);
+            if (!table) throw new Error(`Table ${tableName} does not exist`);
             
-            const transaction = db.transaction([tableName], 'readonly');
-            const store = transaction.objectStore(tableName);
+            const data = await table.toArray();
+            const schema = tableSchemas[tableName] || [];
             
-            return new Promise((resolve, reject) => {
-                const request = store.getAll();
-                request.onsuccess = () => {
-                    const allData = request.result;
-                    // Filter out metadata
-                    const data = allData.filter(item => !item._isMetadata);
-                    
-                    // Get schema from metadata
-                    const metadata = allData.find(item => item._isMetadata);
-                    const schema = metadata ? metadata._schema : null;
-                    
-                    resolve({ data, schema });
-                };
-                request.onerror = () => reject(request.error);
-            });
+            return { data, schema };
         }
 
         async function handleDelete(sql) {
@@ -401,14 +363,10 @@
             if (!match) throw new Error('Invalid DELETE syntax');
             
             const tableName = match[1];
-            const transaction = db.transaction([tableName], 'readwrite');
-            const store = transaction.objectStore(tableName);
+            const table = db.table(tableName);
+            if (!table) throw new Error(`Table ${tableName} does not exist`);
             
-            return new Promise((resolve, reject) => {
-                const request = store.clear();
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
-            });
+            await table.clear();
         }
 
         async function handleDropTable(sql) {
@@ -417,23 +375,27 @@
             
             const tableName = match[1];
             
-            db.close();
-            dbVersion++; // Increment our tracked version
-            const request = indexedDB.open('SQLDatabase', dbVersion);
+            // Remove from schemas
+            delete tableSchemas[tableName];
             
-            return new Promise((resolve, reject) => {
-                request.onupgradeneeded = (event) => {
-                    db = event.target.result;
-                    if (db.objectStoreNames.contains(tableName)) {
-                        db.deleteObjectStore(tableName);
-                    }
-                };
-                request.onsuccess = () => {
-                    db = request.result;
-                    resolve();
-                };
-                request.onerror = () => reject(request.error);
-            });
+            // Close and recreate database without this table
+            db.close();
+            
+            const version = db.verno + 1;
+            db = new Dexie('SQLDatabase');
+            
+            // Build schema object for remaining tables
+            const schemaObj = { '_schemas': 'tableName' };
+            for (let table in tableSchemas) {
+                schemaObj[table] = '++id';
+            }
+            
+            db.version(version).stores(schemaObj);
+            
+            await db.open();
+            
+            // Remove schema from _schemas table
+            await db.table('_schemas').where('tableName').equals(tableName).delete();
         }
 
         async function resetDatabase() {
@@ -441,39 +403,26 @@
                 return;
             }
             
-            if (db) {
+            try {
                 db.close();
+                await Dexie.delete('SQLDatabase');
+                
+                // Recreate empty database
+                db = new Dexie('SQLDatabase');
+                tableSchemas = {};
+                
+                document.getElementById('results').innerHTML = `
+                    <div class="result-message success">✓ Database reset successfully</div>
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚡</div>
+                        <p>Type your SQL query and press "Run Query" to see results</p>
+                    </div>
+                `;
+            } catch (error) {
+                document.getElementById('results').innerHTML = `
+                    <div class="result-message error">Error resetting database: ${error.message}</div>
+                `;
             }
-            
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.deleteDatabase('SQLDatabase');
-                
-                request.onsuccess = () => {
-                    dbVersion = null;
-                    db = null;
-                    document.getElementById('results').innerHTML = `
-                        <div class="result-message success">✓ Database reset successfully</div>
-                        <div class="empty-state">
-                            <div class="empty-state-icon">⚡</div>
-                            <p>Type your SQL query and press "Run Query" to see results</p>
-                        </div>
-                    `;
-                    resolve();
-                };
-                
-                request.onerror = () => {
-                    document.getElementById('results').innerHTML = `
-                        <div class="result-message error">Error resetting database: ${request.error}</div>
-                    `;
-                    reject(request.error);
-                };
-                
-                request.onblocked = () => {
-                    document.getElementById('results').innerHTML = `
-                        <div class="result-message error">Database reset blocked. Please close all other tabs with this page open.</div>
-                    `;
-                };
-            });
         }
 
         function displayResults(results, sql) {
@@ -486,8 +435,8 @@
                 return;
             }
             
-            // Use schema if available, otherwise generate column names
-            const columns = schema || (data[0].values ? data[0].values.map((_, i) => `Column ${i + 1}`) : []);
+            // Use schema if available
+            const columns = schema && schema.length > 0 ? schema : Object.keys(data[0]).filter(k => k !== 'id');
             
             const html = `
                 <div class="result-message success">✓ Query executed successfully (${data.length} row${data.length > 1 ? 's' : ''})<br><code>${sql}</code></div>
@@ -500,7 +449,7 @@
                     <tbody>
                         ${data.map(row => `
                             <tr>
-                                ${Array.isArray(row.values) ? row.values.map(val => `<td>${val !== undefined && val !== null ? val : '-'}</td>`).join('') : ''}
+                                ${columns.map(col => `<td>${row[col] !== undefined && row[col] !== null ? row[col] : '-'}</td>`).join('')}
                             </tr>
                         `).join('')}
                     </tbody>
@@ -511,7 +460,7 @@
         }
 
         // Initialize on load
-        initDB();
+        initializeDB();
     </script>
 </body>
 </html>
