@@ -1,7 +1,8 @@
-# 🇧🇷 Editor LinConEs - SQL em Português
+# Editor LinConEs - SQL em Português
 
 ![LinConEs](https://img.shields.io/badge/LinConEs-SQL%20em%20Portugu%C3%AAs-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
+[![Experimente agora](https://img.shields.io/badge/Experimente%20agora-green)](https://designliquido.github.io/lincones-demo-web)
 
 Uma demonstração interativa do **LinConEs** — a Linguagem de Consulta Estruturada em português — rodando no navegador com suporte a banco de dados usando **IndexedDB**.
 
