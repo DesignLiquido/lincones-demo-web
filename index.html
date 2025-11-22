@@ -184,31 +184,67 @@
         });
 
         // Initialize IndexedDB
+        let dbVersion = 1;
+        
         function initDB() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open('SQLDatabase', 1);
+                const request = indexedDB.open('SQLDatabase', dbVersion);
                 
                 request.onerror = () => reject(request.error);
                 request.onsuccess = () => {
                     db = request.result;
+                    dbVersion = db.version; // Track current version
                     resolve(db);
                 };
                 
                 request.onupgradeneeded = (event) => {
                     db = event.target.result;
+                    dbVersion = db.version; // Track current version
                 };
             });
         }
 
         // Simple SQL parser and executor
         async function executeSQL() {
-            const sql = editor.getValue().trim();
+            const fullText = editor.getValue();
             const resultsDiv = document.getElementById('results');
             
-            if (!sql) {
+            // Extract SQL statements (ignore comments and empty lines)
+            const lines = fullText.split('\n');
+            const sqlStatements = [];
+            let currentStatement = '';
+            
+            for (let line of lines) {
+                line = line.trim();
+                // Skip SQL comments
+                if (line.startsWith('--') || line === '') continue;
+                
+                currentStatement += ' ' + line;
+                
+                // If line ends with semicolon, it's end of statement
+                if (line.endsWith(';')) {
+                    sqlStatements.push(currentStatement.trim().replace(/;+$/, ''));
+                    currentStatement = '';
+                }
+            }
+            
+            // Add any remaining statement
+            if (currentStatement.trim()) {
+                sqlStatements.push(currentStatement.trim().replace(/;+$/, ''));
+            }
+            
+            if (sqlStatements.length === 0) {
                 resultsDiv.innerHTML = '<div class="result-message error">Please enter a SQL query</div>';
                 return;
             }
+            
+            // Execute the last statement (or first if only one)
+            const sql = sqlStatements[sqlStatements.length - 1];
+            
+            console.log('Executing SQL:', sql);
+
+            // Clear results immediately
+            resultsDiv.innerHTML = '<div class="result-message">Executing...</div>';
 
             try {
                 await initDB();
@@ -218,19 +254,19 @@
                 
                 if (upperSQL.startsWith('CREATE TABLE')) {
                     await handleCreateTable(sql);
-                    resultsDiv.innerHTML = '<div class="result-message success">Table created successfully</div>';
+                    resultsDiv.innerHTML = `<div class="result-message success">✓ CREATE TABLE executed successfully<br><code>${sql}</code></div>`;
                 } else if (upperSQL.startsWith('INSERT INTO')) {
                     await handleInsert(sql);
-                    resultsDiv.innerHTML = '<div class="result-message success">Row inserted successfully</div>';
+                    resultsDiv.innerHTML = `<div class="result-message success">✓ INSERT INTO executed successfully<br><code>${sql}</code></div>`;
                 } else if (upperSQL.startsWith('SELECT')) {
                     const results = await handleSelect(sql);
-                    displayResults(results);
+                    displayResults(results, sql);
                 } else if (upperSQL.startsWith('DELETE FROM')) {
                     await handleDelete(sql);
-                    resultsDiv.innerHTML = '<div class="result-message success">Row(s) deleted successfully</div>';
+                    resultsDiv.innerHTML = `<div class="result-message success">✓ DELETE FROM executed successfully<br><code>${sql}</code></div>`;
                 } else if (upperSQL.startsWith('DROP TABLE')) {
                     await handleDropTable(sql);
-                    resultsDiv.innerHTML = '<div class="result-message success">Table dropped successfully</div>';
+                    resultsDiv.innerHTML = `<div class="result-message success">✓ DROP TABLE executed successfully<br><code>${sql}</code></div>`;
                 } else {
                     resultsDiv.innerHTML = '<div class="result-message error">Unsupported SQL command</div>';
                 }
@@ -251,8 +287,8 @@
             }
             
             db.close();
-            const version = db.version + 1;
-            const request = indexedDB.open('SQLDatabase', version);
+            dbVersion++; // Increment our tracked version
+            const request = indexedDB.open('SQLDatabase', dbVersion);
             
             return new Promise((resolve, reject) => {
                 request.onupgradeneeded = (event) => {
@@ -333,8 +369,8 @@
             const tableName = match[1];
             
             db.close();
-            const version = db.version + 1;
-            const request = indexedDB.open('SQLDatabase', version);
+            dbVersion++; // Increment our tracked version
+            const request = indexedDB.open('SQLDatabase', dbVersion);
             
             return new Promise((resolve, reject) => {
                 request.onupgradeneeded = (event) => {
@@ -351,16 +387,16 @@
             });
         }
 
-        function displayResults(results) {
+        function displayResults(results, sql) {
             const resultsDiv = document.getElementById('results');
             
             if (!results || results.length === 0) {
-                resultsDiv.innerHTML = '<div class="result-message success">Query executed successfully (0 rows)</div>';
+                resultsDiv.innerHTML = `<div class="result-message success">✓ Query executed successfully (0 rows)<br><code>${sql}</code></div>`;
                 return;
             }
             
             const html = `
-                <div class="result-message success">Query executed successfully (${results.length} row${results.length > 1 ? 's' : ''})</div>
+                <div class="result-message success">✓ Query executed successfully (${results.length} row${results.length > 1 ? 's' : ''})<br><code>${sql}</code></div>
                 <table>
                     <thead>
                         <tr>
