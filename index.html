@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SQL IndexedDB Editor</title>
+    <title>Editor LinConEs - SQL em Português</title>
     <style>
         * {
             margin: 0;
@@ -30,6 +30,11 @@
             font-size: 18px;
             font-weight: 600;
             color: #cccccc;
+        }
+        .header h1 small {
+            font-size: 12px;
+            color: #858585;
+            font-weight: 400;
         }
         .run-btn {
             background: #0e639c;
@@ -97,12 +102,42 @@
             margin-bottom: 16px;
             font-size: 13px;
         }
+        .result-message code {
+            display: block;
+            margin-top: 8px;
+            padding: 8px;
+            background: #1e1e1e;
+            border-radius: 3px;
+            font-size: 12px;
+            color: #4ec9b0;
+        }
         .result-message.success {
             border-left: 3px solid #4ec9b0;
         }
         .result-message.error {
             border-left: 3px solid #f48771;
             color: #f48771;
+        }
+        .translation {
+            background: #2d2d30;
+            border: 1px solid #3e3e42;
+            border-left: 3px solid #dcdcaa;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+        .translation strong {
+            color: #dcdcaa;
+        }
+        .translation code {
+            display: block;
+            margin-top: 8px;
+            padding: 8px;
+            background: #1e1e1e;
+            border-radius: 3px;
+            font-size: 12px;
+            color: #ce9178;
         }
         table {
             width: 100%;
@@ -139,23 +174,26 @@
 </head>
 <body>
     <div class="header">
-        <h1>SQL IndexedDB Editor</h1>
+        <h1>Editor LinConEs <small>SQL em Português</small></h1>
         <div>
-            <button class="run-btn" onclick="executeSQL()">Run Query (Ctrl+Enter)</button>
-            <button class="run-btn reset-btn" onclick="resetDatabase()">Reset Database</button>
+            <button class="run-btn" onclick="executeLinConEs()">Executar (Ctrl+Enter)</button>
+            <button class="run-btn reset-btn" onclick="resetDatabase()">Resetar Banco</button>
         </div>
     </div>
     <div class="container">
         <div class="editor-panel">
-            <div class="panel-header">SQL Editor</div>
+            <div class="panel-header">Editor LinConEs</div>
             <div id="editor"></div>
         </div>
         <div class="results-panel">
-            <div class="panel-header">Results</div>
+            <div class="panel-header">Resultados</div>
             <div class="results-content" id="results">
                 <div class="empty-state">
-                    <div class="empty-state-icon">⚡</div>
-                    <p>Type your SQL query and press "Run Query" to see results</p>
+                    <div class="empty-state-icon">🇧🇷</div>
+                    <p>Digite sua consulta em LinConEs e pressione "Executar"</p>
+                    <p style="margin-top: 16px; font-size: 12px;">
+                        Exemplo: SELECIONAR * DE usuarios
+                    </p>
                 </div>
             </div>
         </div>
@@ -165,8 +203,78 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
     <script>
         let editor;
-        let db = new Dexie('SQLDatabase');
+        let db = new Dexie('LinConEsDatabase');
         let tableSchemas = {}; // Store column names for each table
+
+        // LinConEs to SQL translation map
+        const linconesToSQL = {
+            // Commands
+            'SELECIONAR': 'SELECT',
+            'DE': 'FROM',
+            'ONDE': 'WHERE',
+            'INSERIR': 'INSERT',
+            'EM': 'INTO',
+            'VALORES': 'VALUES',
+            'ATUALIZAR': 'UPDATE',
+            'DEFINIR': 'SET',
+            'EXCLUIR': 'DELETE',
+            'CRIAR': 'CREATE',
+            'TABELA': 'TABLE',
+            'ALTERAR': 'ALTER',
+            'REMOVER': 'DROP',
+            'ADICIONAR': 'ADD',
+            'COLUNA': 'COLUMN',
+            'MODIFICAR': 'MODIFY',
+            'RENOMEAR': 'RENAME',
+            'PARA': 'TO',
+            
+            // Data types
+            'INTEIRO': 'INT',
+            'TEXTO': 'VARCHAR',
+            'REAL': 'REAL',
+            'LOGICO': 'BOOLEAN',
+            'DATA': 'DATE',
+            'DATAHORA': 'DATETIME',
+            
+            // Constraints
+            'NAO': 'NOT',
+            'NULO': 'NULL',
+            'CHAVE': 'KEY',
+            'PRIMARIA': 'PRIMARY',
+            'ESTRANGEIRA': 'FOREIGN',
+            'AUTO': 'AUTO',
+            'INCREMENTO': 'INCREMENT',
+            'UNICO': 'UNIQUE',
+            'RESTRIÇÃO': 'CONSTRAINT',
+            'REFERENCIA': 'REFERENCES',
+            
+            // Logical operators
+            'E': 'AND',
+            'OU': 'OR',
+            
+            // Order/Group
+            'ORDENAR': 'ORDER',
+            'POR': 'BY',
+            'AGRUPAR': 'GROUP',
+            'CRESCENTE': 'ASC',
+            'DECRESCENTE': 'DESC',
+            'LIMITE': 'LIMIT'
+        };
+
+        // Translate LinConEs to SQL
+        function translateLinConEsToSQL(lincones) {
+            let sql = lincones;
+            
+            // Sort by length (descending) to replace longer phrases first
+            const sortedKeys = Object.keys(linconesToSQL).sort((a, b) => b.length - a.length);
+            
+            for (const key of sortedKeys) {
+                const regex = new RegExp('\\b' + key + '\\b', 'gi');
+                sql = sql.replace(regex, linconesToSQL[key]);
+            }
+            
+            return sql;
+        }
 
         // Initialize Monaco Editor
         require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
@@ -183,7 +291,12 @@
         
         require(['vs/editor/editor.main'], function() {
             editor = monaco.editor.create(document.getElementById('editor'), {
-                value: '-- Sample queries:\n-- CREATE TABLE users (id, name, email)\n-- INSERT INTO users VALUES (1, "John Doe", "john@example.com")\n-- SELECT * FROM users\n\nSELECT * FROM users;',
+                value: `-- Exemplos em LinConEs (SQL em Português):
+-- CRIAR TABELA usuarios (id, nome, email)
+-- INSERIR EM usuarios VALORES (1, "João Silva", "joao@exemplo.com")
+-- SELECIONAR * DE usuarios
+
+SELECIONAR * DE usuarios;`,
                 language: 'sql',
                 theme: 'vs-dark',
                 automaticLayout: true,
@@ -192,7 +305,7 @@
             });
 
             // Ctrl+Enter to execute
-            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, executeSQL);
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, executeLinConEs);
         });
 
         // Initialize existing tables and schemas
@@ -213,14 +326,14 @@
             }
         }
 
-        // Simple SQL parser and executor
-        async function executeSQL() {
+        // Execute LinConEs
+        async function executeLinConEs() {
             const fullText = editor.getValue();
             const resultsDiv = document.getElementById('results');
             
-            // Extract SQL statements (ignore comments and empty lines)
+            // Extract LinConEs statements (ignore comments and empty lines)
             const lines = fullText.split('\n');
-            const sqlStatements = [];
+            const linconesStatements = [];
             let currentStatement = '';
             
             for (let line of lines) {
@@ -232,66 +345,79 @@
                 
                 // If line ends with semicolon, it's end of statement
                 if (line.endsWith(';')) {
-                    sqlStatements.push(currentStatement.trim().replace(/;+$/, ''));
+                    linconesStatements.push(currentStatement.trim().replace(/;+$/, ''));
                     currentStatement = '';
                 }
             }
             
             // Add any remaining statement
             if (currentStatement.trim()) {
-                sqlStatements.push(currentStatement.trim().replace(/;+$/, ''));
+                linconesStatements.push(currentStatement.trim().replace(/;+$/, ''));
             }
             
-            if (sqlStatements.length === 0) {
-                resultsDiv.innerHTML = '<div class="result-message error">Please enter a SQL query</div>';
+            if (linconesStatements.length === 0) {
+                resultsDiv.innerHTML = '<div class="result-message error">Por favor, digite uma consulta LinConEs</div>';
                 return;
             }
             
-            // Execute the last statement (or first if only one)
-            const sql = sqlStatements[sqlStatements.length - 1];
+            // Execute the last statement
+            const lincones = linconesStatements[linconesStatements.length - 1];
+            const sql = translateLinConEsToSQL(lincones);
             
-            console.log('Executing SQL:', sql);
+            console.log('LinConEs:', lincones);
+            console.log('Traduzido para SQL:', sql);
 
             // Clear results immediately
-            resultsDiv.innerHTML = '<div class="result-message">Executing...</div>';
+            resultsDiv.innerHTML = '<div class="result-message">Executando...</div>';
 
             try {
+                // Show translation
+                resultsDiv.innerHTML = `
+                    <div class="translation">
+                        <strong>Tradução LinConEs → SQL:</strong>
+                        <code>${sql}</code>
+                    </div>
+                `;
+                
                 // Parse SQL command
                 const upperSQL = sql.toUpperCase();
                 
                 if (upperSQL.startsWith('CREATE TABLE')) {
                     await handleCreateTable(sql);
-                    resultsDiv.innerHTML = `<div class="result-message success">✓ CREATE TABLE executed successfully<br><code>${sql}</code></div>`;
+                    resultsDiv.innerHTML += `<div class="result-message success">✓ CRIAR TABELA executado com sucesso<br><code>${lincones}</code></div>`;
                 } else if (upperSQL.startsWith('INSERT INTO')) {
                     await handleInsert(sql);
-                    resultsDiv.innerHTML = `<div class="result-message success">✓ INSERT INTO executed successfully<br><code>${sql}</code></div>`;
+                    resultsDiv.innerHTML += `<div class="result-message success">✓ INSERIR executado com sucesso<br><code>${lincones}</code></div>`;
                 } else if (upperSQL.startsWith('SELECT')) {
                     const results = await handleSelect(sql);
-                    displayResults(results, sql);
+                    displayResults(results, lincones, sql);
                 } else if (upperSQL.startsWith('DELETE FROM')) {
                     await handleDelete(sql);
-                    resultsDiv.innerHTML = `<div class="result-message success">✓ DELETE FROM executed successfully<br><code>${sql}</code></div>`;
+                    resultsDiv.innerHTML += `<div class="result-message success">✓ EXCLUIR executado com sucesso<br><code>${lincones}</code></div>`;
                 } else if (upperSQL.startsWith('DROP TABLE')) {
                     await handleDropTable(sql);
-                    resultsDiv.innerHTML = `<div class="result-message success">✓ DROP TABLE executed successfully<br><code>${sql}</code></div>`;
+                    resultsDiv.innerHTML += `<div class="result-message success">✓ REMOVER TABELA executado com sucesso<br><code>${lincones}</code></div>`;
                 } else {
-                    resultsDiv.innerHTML = '<div class="result-message error">Unsupported SQL command</div>';
+                    resultsDiv.innerHTML += '<div class="result-message error">Comando SQL não suportado</div>';
                 }
             } catch (error) {
-                resultsDiv.innerHTML = `<div class="result-message error">Error: ${error.message}</div>`;
+                resultsDiv.innerHTML += `<div class="result-message error">Erro: ${error.message}</div>`;
                 console.error(error);
             }
         }
 
         async function handleCreateTable(sql) {
             const match = sql.match(/CREATE TABLE\s+(\w+)\s*\((.*?)\)/i);
-            if (!match) throw new Error('Invalid CREATE TABLE syntax');
+            if (!match) throw new Error('Sintaxe inválida para CRIAR TABELA');
             
-            const tableName = match[1];
+            const tableName = match[1].toLowerCase();
             const columnsStr = match[2];
             
-            // Parse column names
-            const columns = columnsStr.split(',').map(col => col.trim().split(/\s+/)[0]);
+            // Parse column names (simplified - just get first word of each column definition)
+            const columns = columnsStr.split(',').map(col => {
+                const colName = col.trim().split(/\s+/)[0];
+                return colName.toLowerCase();
+            });
             
             // Store schema
             tableSchemas[tableName] = columns;
@@ -300,7 +426,7 @@
             db.close();
             
             const version = db.verno + 1;
-            db = new Dexie('SQLDatabase');
+            db = new Dexie('LinConEsDatabase');
             
             // Build schema object for all tables
             const schemaObj = { '_schemas': 'tableName' };
@@ -318,9 +444,9 @@
 
         async function handleInsert(sql) {
             const match = sql.match(/INSERT INTO\s+(\w+)\s+VALUES\s*\((.*?)\)/i);
-            if (!match) throw new Error('Invalid INSERT syntax');
+            if (!match) throw new Error('Sintaxe inválida para INSERIR');
             
-            const tableName = match[1];
+            const tableName = match[1].toLowerCase();
             const valuesStr = match[2];
             const values = valuesStr.split(',').map(v => {
                 v = v.trim();
@@ -331,7 +457,7 @@
             });
             
             const table = db.table(tableName);
-            if (!table) throw new Error(`Table ${tableName} does not exist`);
+            if (!table) throw new Error(`Tabela ${tableName} não existe`);
             
             // Convert values array to object with column names
             const columns = tableSchemas[tableName] || [];
@@ -345,12 +471,12 @@
 
         async function handleSelect(sql) {
             const match = sql.match(/SELECT\s+.*?\s+FROM\s+(\w+)/i);
-            if (!match) throw new Error('Invalid SELECT syntax');
+            if (!match) throw new Error('Sintaxe inválida para SELECIONAR');
             
-            const tableName = match[1];
+            const tableName = match[1].toLowerCase();
             
             const table = db.table(tableName);
-            if (!table) throw new Error(`Table ${tableName} does not exist`);
+            if (!table) throw new Error(`Tabela ${tableName} não existe`);
             
             const data = await table.toArray();
             const schema = tableSchemas[tableName] || [];
@@ -360,20 +486,20 @@
 
         async function handleDelete(sql) {
             const match = sql.match(/DELETE FROM\s+(\w+)/i);
-            if (!match) throw new Error('Invalid DELETE syntax');
+            if (!match) throw new Error('Sintaxe inválida para EXCLUIR');
             
-            const tableName = match[1];
+            const tableName = match[1].toLowerCase();
             const table = db.table(tableName);
-            if (!table) throw new Error(`Table ${tableName} does not exist`);
+            if (!table) throw new Error(`Tabela ${tableName} não existe`);
             
             await table.clear();
         }
 
         async function handleDropTable(sql) {
             const match = sql.match(/DROP TABLE\s+(\w+)/i);
-            if (!match) throw new Error('Invalid DROP TABLE syntax');
+            if (!match) throw new Error('Sintaxe inválida para REMOVER TABELA');
             
-            const tableName = match[1];
+            const tableName = match[1].toLowerCase();
             
             // Remove from schemas
             delete tableSchemas[tableName];
@@ -382,7 +508,7 @@
             db.close();
             
             const version = db.verno + 1;
-            db = new Dexie('SQLDatabase');
+            db = new Dexie('LinConEsDatabase');
             
             // Build schema object for remaining tables
             const schemaObj = { '_schemas': 'tableName' };
@@ -399,39 +525,45 @@
         }
 
         async function resetDatabase() {
-            if (!confirm('Are you sure you want to delete the entire database? This cannot be undone.')) {
+            if (!confirm('Tem certeza que deseja deletar todo o banco de dados? Esta ação não pode ser desfeita.')) {
                 return;
             }
             
             try {
                 db.close();
-                await Dexie.delete('SQLDatabase');
+                await Dexie.delete('LinConEsDatabase');
                 
                 // Recreate empty database
-                db = new Dexie('SQLDatabase');
+                db = new Dexie('LinConEsDatabase');
                 tableSchemas = {};
                 
                 document.getElementById('results').innerHTML = `
-                    <div class="result-message success">✓ Database reset successfully</div>
+                    <div class="result-message success">✓ Banco de dados resetado com sucesso</div>
                     <div class="empty-state">
-                        <div class="empty-state-icon">⚡</div>
-                        <p>Type your SQL query and press "Run Query" to see results</p>
+                        <div class="empty-state-icon">🇧🇷</div>
+                        <p>Digite sua consulta em LinConEs e pressione "Executar"</p>
                     </div>
                 `;
             } catch (error) {
                 document.getElementById('results').innerHTML = `
-                    <div class="result-message error">Error resetting database: ${error.message}</div>
+                    <div class="result-message error">Erro ao resetar banco: ${error.message}</div>
                 `;
             }
         }
 
-        function displayResults(results, sql) {
+        function displayResults(results, lincones, sql) {
             const resultsDiv = document.getElementById('results');
             
             const { data, schema } = results;
             
             if (!data || data.length === 0) {
-                resultsDiv.innerHTML = `<div class="result-message success">✓ Query executed successfully (0 rows)<br><code>${sql}</code></div>`;
+                resultsDiv.innerHTML = `
+                    <div class="translation">
+                        <strong>Tradução LinConEs → SQL:</strong>
+                        <code>${sql}</code>
+                    </div>
+                    <div class="result-message success">✓ Consulta executada com sucesso (0 linhas)<br><code>${lincones}</code></div>
+                `;
                 return;
             }
             
@@ -439,7 +571,11 @@
             const columns = schema && schema.length > 0 ? schema : Object.keys(data[0]).filter(k => k !== 'id');
             
             const html = `
-                <div class="result-message success">✓ Query executed successfully (${data.length} row${data.length > 1 ? 's' : ''})<br><code>${sql}</code></div>
+                <div class="translation">
+                    <strong>Tradução LinConEs → SQL:</strong>
+                    <code>${sql}</code>
+                </div>
+                <div class="result-message success">✓ Consulta executada com sucesso (${data.length} linha${data.length > 1 ? 's' : ''})<br><code>${lincones}</code></div>
                 <table>
                     <thead>
                         <tr>
