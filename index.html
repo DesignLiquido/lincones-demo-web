@@ -267,6 +267,174 @@
         };
         
         require(['vs/editor/editor.main'], function() {
+            // Registrar linguagem LinConEs
+            monaco.languages.register({ id: 'lincones' });
+
+            monaco.languages.setMonarchTokensProvider('lincones', {
+                ignoreCase: true,
+                keywords: [
+                    'selecionar', 'inserir', 'atualizar', 'excluir', 'criar', 'alterar', 'remover',
+                    'de', 'em', 'onde', 'ordenar', 'por', 'agrupar', 'definir', 'valores', 'para',
+                    'distinto', 'entre', 'existir', 'se', 'e', 'nao', 'não',
+                    'tabela', 'visao', 'visão', 'coluna', 'adicionar', 'renomear',
+                    'chave', 'primaria', 'primária', 'estrangeira', 'referencia',
+                    'unica', 'única', 'restricao', 'restrição',
+                    'nulo', 'auto', 'incremento', 'identidade',
+                    'inteiro', 'texto', 'logico', 'lógico', 'caracteres', 'media',
+                    'falso', 'verdadeiro'
+                ],
+                tokenizer: {
+                    root: [
+                        { include: '@whitespace' },
+                        [/--.*$/, 'comment'],
+                        [/"([^"\\]|\\.)*$/, 'string.invalid'],
+                        [/"/, 'string', '@cadeia_dupla'],
+                        [/'([^'\\]|\\.)*$/, 'string.invalid'],
+                        [/'/, 'string', '@cadeia_simples'],
+                        [/\d+(\.\d+)?/, 'number'],
+                        [/[,;:()*=<>!]/, 'delimiter'],
+                        [/[a-zA-Z\u00C0-\u00FF_][\w\u00C0-\u00FF]*/, {
+                            cases: {
+                                '@keywords': 'keyword',
+                                '@default': 'identifier'
+                            }
+                        }]
+                    ],
+                    whitespace: [
+                        [/\s+/, 'white']
+                    ],
+                    cadeia_dupla: [
+                        [/[^\\"]+/, 'string'],
+                        [/"/, 'string', '@pop']
+                    ],
+                    cadeia_simples: [
+                        [/[^\\']+/, 'string'],
+                        [/'/, 'string', '@pop']
+                    ]
+                }
+            });
+
+            monaco.languages.setLanguageConfiguration('lincones', {
+                comments: { lineComment: '--' },
+                brackets: [['(', ')']],
+                autoClosingPairs: [
+                    { open: '(', close: ')' },
+                    { open: '"', close: '"' },
+                    { open: "'", close: "'" }
+                ]
+            });
+
+            monaco.languages.registerCompletionItemProvider('lincones', {
+                provideCompletionItems: function(modelo, posicao) {
+                    const palavra = modelo.getWordUntilPosition(posicao);
+                    const intervalo = {
+                        startLineNumber: posicao.lineNumber,
+                        endLineNumber: posicao.lineNumber,
+                        startColumn: palavra.startColumn,
+                        endColumn: palavra.endColumn
+                    };
+
+                    const fragmentos = [
+                        {
+                            label: 'selecionar',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'SELECIONAR simples',
+                            insertText: 'SELECIONAR ${1:*} DE ${2:tabela};',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'selecionar-onde',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'SELECIONAR com ONDE',
+                            insertText: 'SELECIONAR ${1:*} DE ${2:tabela}\nONDE ${3:coluna} = ${4:valor};',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'selecionar-ordenar',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'SELECIONAR com ORDENAR POR',
+                            insertText: 'SELECIONAR ${1:*} DE ${2:tabela}\nORDENAR POR ${3:coluna};',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'inserir',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'INSERIR EM tabela',
+                            insertText: 'INSERIR EM ${1:tabela} (${2:coluna1}, ${3:coluna2})\nVALORES (${4:valor1}, ${5:valor2});',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'atualizar',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'ATUALIZAR tabela',
+                            insertText: 'ATUALIZAR ${1:tabela}\nDEFINIR ${2:coluna} = ${3:valor}\nONDE ${4:coluna} = ${5:valor};',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'excluir',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'EXCLUIR DE tabela',
+                            insertText: 'EXCLUIR DE ${1:tabela}\nONDE ${2:coluna} = ${3:valor};',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'criar',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'CRIAR TABELA',
+                            insertText: [
+                                'CRIAR TABELA ${1:tabela} (',
+                                '\t${2:id} INTEIRO NAO NULO CHAVE PRIMARIA AUTO INCREMENTO,',
+                                '\t${3:nome} TEXTO(${4:100}) NAO NULO',
+                                ');'
+                            ].join('\n'),
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'alterar',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'ALTERAR TABELA ADICIONAR COLUNA',
+                            insertText: 'ALTERAR TABELA ${1:tabela}\nADICIONAR COLUNA ${2:coluna} ${3:TEXTO(100)};',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        },
+                        {
+                            label: 'remover',
+                            kind: monaco.languages.CompletionItemKind.Snippet,
+                            documentation: 'REMOVER TABELA',
+                            insertText: 'REMOVER TABELA ${1:tabela};',
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: intervalo
+                        }
+                    ];
+
+                    const palavrasChave = [
+                        'SELECIONAR', 'INSERIR', 'ATUALIZAR', 'EXCLUIR', 'CRIAR', 'ALTERAR', 'REMOVER',
+                        'DE', 'EM', 'ONDE', 'ORDENAR', 'POR', 'AGRUPAR', 'DEFINIR', 'VALORES', 'PARA',
+                        'DISTINTO', 'ENTRE', 'EXISTIR', 'SE', 'E', 'NAO', 'NÃO',
+                        'TABELA', 'VISAO', 'VISÃO', 'COLUNA', 'ADICIONAR', 'RENOMEAR',
+                        'CHAVE', 'PRIMARIA', 'PRIMÁRIA', 'ESTRANGEIRA', 'REFERENCIA',
+                        'UNICA', 'ÚNICA', 'RESTRICAO', 'RESTRIÇÃO',
+                        'NULO', 'AUTO', 'INCREMENTO', 'IDENTIDADE',
+                        'INTEIRO', 'TEXTO', 'LOGICO', 'LÓGICO', 'CARACTERES', 'MEDIA',
+                        'FALSO', 'VERDADEIRO'
+                    ].map(palavra => ({
+                        label: palavra,
+                        kind: monaco.languages.CompletionItemKind.Keyword,
+                        insertText: palavra,
+                        range: intervalo
+                    }));
+
+                    return { suggestions: [...fragmentos, ...palavrasChave] };
+                }
+            });
+
             editor = monaco.editor.create(document.getElementById('editor'), {
                 value: `-- Exemplos em LinConEs (SQL em Português):
 -- CRIAR TABELA usuarios (id INTEIRO, nome TEXTO, email TEXTO)
@@ -274,7 +442,7 @@
 -- SELECIONAR * DE usuarios
 
 SELECIONAR * DE usuarios;`,
-                language: 'sql',
+                language: 'lincones',
                 theme: 'vs-dark',
                 automaticLayout: true,
                 fontSize: 14,
