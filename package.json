@@ -1,13 +1,16 @@
 {
   "name": "lincones-demo-web",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "Demonstração de LinConEs no navegador de internet, usando IndexedDB.",
   "main": "index.html",
   "homepage": "https://designliquido.github.io/lincones-demo-web",
   "scripts": {
-    "deploy": "gh-pages -d .",
-    "predeploy": "echo 'Preparando deploy...'",
-    "publicar": "yarn deploy"
+    "build": "del-cli ./dist && tsc && copy-files-from-to --force && browserify dist/adaptador-lincones.js -o dist/lincones.bundle.js",
+    "deploy": "gh-pages -d dist",
+    "predeploy": "yarn build",
+    "publicar": "yarn deploy",
+    "servir": "yarn http-server -o ./dist -c-1",
+    "testar": "yarn build && yarn servir"
   },
   "repository": {
     "type": "git",
@@ -25,6 +28,27 @@
   "author": "Design Líquido",
   "license": "MIT",
   "devDependencies": {
-    "gh-pages": "^6.1.1"
+    "browserify": "^17.0.1",
+    "copy-files-from-to": "^4.0.0",
+    "del-cli": "^7.0.0",
+    "gh-pages": "^6.1.1",
+    "http-server": "^14.1.1",
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "@designliquido/lincones-js": "^0.2.1"
+  },
+  "copyFiles": [
+    {
+      "from": "index.html",
+      "to": "dist/index.html"
+    },
+    {
+      "from": "recursos/icone-lincones.png",
+      "to": "dist/recursos/icone-lincones.png"
+    }
+  ],
+  "copyFilesSettings": {
+    "whenFileExists": "overwrite"
   }
 }

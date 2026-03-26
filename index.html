@@ -170,6 +170,28 @@
             font-size: 48px;
             margin-bottom: 16px;
         }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel-header label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: 0;
+            color: #858585;
+            cursor: pointer;
+        }
+        .panel-header label:hover {
+            color: #cccccc;
+        }
+        .ocultar-traducao .translation {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -177,7 +199,7 @@
         <h1>Editor LinConEs <small>SQL em Português</small></h1>
         <div>
             <button class="run-btn" onclick="executeLinConEs()">Executar (Ctrl+Enter)</button>
-            <button class="run-btn reset-btn" onclick="resetDatabase()">Resetar Banco</button>
+            <button class="run-btn reset-btn" onclick="reiniciarBancoDeDados()">Resetar Banco</button>
         </div>
     </div>
     <div class="container">
@@ -186,10 +208,16 @@
             <div id="editor"></div>
         </div>
         <div class="results-panel">
-            <div class="panel-header">Resultados</div>
+            <div class="panel-header">
+                Resultados
+                <label>
+                    <input type="checkbox" id="mostrarTraducao" checked onchange="alternarTraducao(this)">
+                    Mostrar tradução SQL
+                </label>
+            </div>
             <div class="results-content" id="results">
                 <div class="empty-state">
-                    <div class="empty-state-icon">🇧🇷</div>
+                    <div class="empty-state-icon"><img src="recursos/icone-lincones.png" alt="LinConEs"></div>
                     <p>Digite sua consulta em LinConEs e pressione "Executar"</p>
                     <p style="margin-top: 16px; font-size: 12px;">
                         Exemplo: SELECIONAR * DE usuarios
@@ -200,86 +228,35 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
+    <script src="lincones.bundle.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
     <script>
         let editor;
         let db = new Dexie('LinConEsDatabase');
-        let tableSchemas = {}; // Store column names for each table
+        let tableSchemas = {}; // Armazenar nomes de colunas para cada tabela
 
-        // LinConEs to SQL translation map
-        const linconesToSQL = {
-            // Commands
-            'SELECIONAR': 'SELECT',
-            'DE': 'FROM',
-            'ONDE': 'WHERE',
-            'INSERIR': 'INSERT',
-            'EM': 'INTO',
-            'VALORES': 'VALUES',
-            'ATUALIZAR': 'UPDATE',
-            'DEFINIR': 'SET',
-            'EXCLUIR': 'DELETE',
-            'CRIAR': 'CREATE',
-            'TABELA': 'TABLE',
-            'ALTERAR': 'ALTER',
-            'REMOVER': 'DROP',
-            'ADICIONAR': 'ADD',
-            'COLUNA': 'COLUMN',
-            'MODIFICAR': 'MODIFY',
-            'RENOMEAR': 'RENAME',
-            'PARA': 'TO',
-            
-            // Data types
-            'INTEIRO': 'INT',
-            'TEXTO': 'VARCHAR',
-            'REAL': 'REAL',
-            'LOGICO': 'BOOLEAN',
-            'DATA': 'DATE',
-            'DATAHORA': 'DATETIME',
-            
-            // Constraints
-            'NAO': 'NOT',
-            'NULO': 'NULL',
-            'CHAVE': 'KEY',
-            'PRIMARIA': 'PRIMARY',
-            'ESTRANGEIRA': 'FOREIGN',
-            'AUTO': 'AUTO',
-            'INCREMENTO': 'INCREMENT',
-            'UNICO': 'UNIQUE',
-            'RESTRIÇÃO': 'CONSTRAINT',
-            'REFERENCIA': 'REFERENCES',
-            
-            // Logical operators
-            'E': 'AND',
-            'OU': 'OR',
-            
-            // Order/Group
-            'ORDENAR': 'ORDER',
-            'POR': 'BY',
-            'AGRUPAR': 'GROUP',
-            'CRESCENTE': 'ASC',
-            'DECRESCENTE': 'DESC',
-            'LIMITE': 'LIMIT'
-        };
+        // Traduzir LinConEs para SQL usando o pipeline Lexador-Parser-Translator
+        function traduzirLinconesParaSql(lincones) {
+            const retornoLexador = lexador.mapear(lincones.split('\n'));
 
-        // Translate LinConEs to SQL
-        function translateLinConEsToSQL(lincones) {
-            let sql = lincones;
-            
-            // Sort by length (descending) to replace longer phrases first
-            const sortedKeys = Object.keys(linconesToSQL).sort((a, b) => b.length - a.length);
-            
-            for (const key of sortedKeys) {
-                const regex = new RegExp('\\b' + key + '\\b', 'gi');
-                sql = sql.replace(regex, linconesToSQL[key]);
+            if (retornoLexador.erros && retornoLexador.erros.length > 0) {
+                const erro = retornoLexador.erros[0];
+                throw new Error(`Erro léxico na linha ${erro.linha}: ${erro.mensagem}`);
             }
-            
-            return sql;
+
+            const retornoAvaliador = avaliadorSintatico.analisar(retornoLexador);
+
+            if (retornoAvaliador.erros && retornoAvaliador.erros.length > 0) {
+                throw new Error(retornoAvaliador.erros[0].mensagem || 'Erro sintático');
+            }
+
+            return tradutorSqlAnsi.traduzir(retornoAvaliador.comandos);
         }
 
-        // Initialize Monaco Editor
+        // Inicializar Monaco Editor
         require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
         
-        // Disable web workers to avoid console warnings
+        // Desabilitar workers externos para evitar problemas de CORS, usando um worker embutido
         window.MonacoEnvironment = {
             getWorker: function(moduleId, label) {
                 return new Worker('data:text/javascript;charset=utf-8,' + encodeURIComponent(`
@@ -292,8 +269,8 @@
         require(['vs/editor/editor.main'], function() {
             editor = monaco.editor.create(document.getElementById('editor'), {
                 value: `-- Exemplos em LinConEs (SQL em Português):
--- CRIAR TABELA usuarios (id, nome, email)
--- INSERIR EM usuarios VALORES (1, "João Silva", "joao@exemplo.com")
+-- CRIAR TABELA usuarios (id INTEIRO, nome TEXTO, email TEXTO)
+-- INSERIR EM usuarios (id, nome, email) VALORES (1, "João Silva", "joao@exemplo.com")
 -- SELECIONAR * DE usuarios
 
 SELECIONAR * DE usuarios;`,
@@ -304,15 +281,15 @@ SELECIONAR * DE usuarios;`,
                 minimap: { enabled: false }
             });
 
-            // Ctrl+Enter to execute
+            // Ctrl/Cmd + Enter para executar LinConEs
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, executeLinConEs);
         });
 
-        // Initialize existing tables and schemas
-        async function initializeDB() {
+        // Inicializar banco de dados e carregar esquemas armazenados
+        async function inicializarBancoDeDados() {
             await db.open();
             
-            // Check if we have stored schemas
+            // Verificar se temos esquemas armazenados
             if (db.tables.length > 0) {
                 const schemasTable = db.table('_schemas');
                 if (schemasTable) {
@@ -331,26 +308,26 @@ SELECIONAR * DE usuarios;`,
             const fullText = editor.getValue();
             const resultsDiv = document.getElementById('results');
             
-            // Extract LinConEs statements (ignore comments and empty lines)
+            // Extrair declarações LinConEs (ignorar comentários e linhas vazias)
             const lines = fullText.split('\n');
             const linconesStatements = [];
             let currentStatement = '';
             
             for (let line of lines) {
                 line = line.trim();
-                // Skip SQL comments
+                // Ignorar comentários SQL
                 if (line.startsWith('--') || line === '') continue;
                 
                 currentStatement += ' ' + line;
                 
-                // If line ends with semicolon, it's end of statement
+                // Se a linha termina com ponto e vírgula, é o fim da declaração
                 if (line.endsWith(';')) {
                     linconesStatements.push(currentStatement.trim().replace(/;+$/, ''));
                     currentStatement = '';
                 }
             }
             
-            // Add any remaining statement
+            // Adicionar última declaração se não terminar com ponto e vírgula
             if (currentStatement.trim()) {
                 linconesStatements.push(currentStatement.trim().replace(/;+$/, ''));
             }
@@ -360,18 +337,19 @@ SELECIONAR * DE usuarios;`,
                 return;
             }
             
-            // Execute the last statement
+            // Executar apenas o último comando LinConEs para simplicidade
             const lincones = linconesStatements[linconesStatements.length - 1];
-            const sql = translateLinConEsToSQL(lincones);
-            
-            console.log('LinConEs:', lincones);
-            console.log('Traduzido para SQL:', sql);
 
-            // Clear results immediately
+            // Limpar resultados antes de qualquer operação
             resultsDiv.innerHTML = '<div class="result-message">Executando...</div>';
 
             try {
-                // Show translation
+                const sql = traduzirLinconesParaSql(lincones);
+
+                console.log('LinConEs:', lincones);
+                console.log('Traduzido para SQL:', sql);
+
+                // Mostrar tradução
                 resultsDiv.innerHTML = `
                     <div class="translation">
                         <strong>Tradução LinConEs → SQL:</strong>
@@ -379,56 +357,56 @@ SELECIONAR * DE usuarios;`,
                     </div>
                 `;
                 
-                // Parse SQL command
+                // Compreender comando SQL e executar ação correspondente
                 const upperSQL = sql.toUpperCase();
                 
                 if (upperSQL.startsWith('CREATE TABLE')) {
-                    await handleCreateTable(sql);
+                    await executarCriacaoTabela(sql);
                     resultsDiv.innerHTML += `<div class="result-message success">✓ CRIAR TABELA executado com sucesso<br><code>${lincones}</code></div>`;
                 } else if (upperSQL.startsWith('INSERT INTO')) {
-                    await handleInsert(sql);
+                    await executarInsercao(sql);
                     resultsDiv.innerHTML += `<div class="result-message success">✓ INSERIR executado com sucesso<br><code>${lincones}</code></div>`;
                 } else if (upperSQL.startsWith('SELECT')) {
-                    const results = await handleSelect(sql);
-                    displayResults(results, lincones, sql);
+                    const results = await executarSelecao(sql);
+                    exibirResultados(results, lincones, sql);
                 } else if (upperSQL.startsWith('DELETE FROM')) {
-                    await handleDelete(sql);
+                    await executarExclusao(sql);
                     resultsDiv.innerHTML += `<div class="result-message success">✓ EXCLUIR executado com sucesso<br><code>${lincones}</code></div>`;
                 } else if (upperSQL.startsWith('DROP TABLE')) {
-                    await handleDropTable(sql);
+                    await executarExclusaoTabela(sql);
                     resultsDiv.innerHTML += `<div class="result-message success">✓ REMOVER TABELA executado com sucesso<br><code>${lincones}</code></div>`;
                 } else {
                     resultsDiv.innerHTML += '<div class="result-message error">Comando SQL não suportado</div>';
                 }
             } catch (error) {
-                resultsDiv.innerHTML += `<div class="result-message error">Erro: ${error.message}</div>`;
+                resultsDiv.innerHTML = `<div class="result-message error">Erro: ${error.message}</div>`;
                 console.error(error);
             }
         }
 
-        async function handleCreateTable(sql) {
-            const match = sql.match(/CREATE TABLE\s+(\w+)\s*\((.*?)\)/i);
+        async function executarCriacaoTabela(sql) {
+            const match = sql.match(/CREATE TABLE\s+(\w+)\s*\((.*?)\)/is);
             if (!match) throw new Error('Sintaxe inválida para CRIAR TABELA');
             
             const tableName = match[1].toLowerCase();
             const columnsStr = match[2];
             
-            // Parse column names (simplified - just get first word of each column definition)
+            // Analisar nomes das colunas (simplificado - apenas obter a primeira palavra de cada definição de coluna)
             const columns = columnsStr.split(',').map(col => {
                 const colName = col.trim().split(/\s+/)[0];
                 return colName.toLowerCase();
             });
             
-            // Store schema
+            // Armazenar esquema
             tableSchemas[tableName] = columns;
             
-            // Close and recreate database with new schema
+            // Fechar e recriar banco de dados com novo esquema
             db.close();
             
             const version = db.verno + 1;
             db = new Dexie('LinConEsDatabase');
             
-            // Build schema object for all tables
+            // Construir objeto de esquema para todas as tabelas
             const schemaObj = { '_schemas': 'tableName' };
             for (let table in tableSchemas) {
                 schemaObj[table] = '++id';
@@ -438,16 +416,17 @@ SELECIONAR * DE usuarios;`,
             
             await db.open();
             
-            // Save schema to _schemas table
+            // Salvar esquema na tabela _schemas
             await db.table('_schemas').put({ tableName, columns });
         }
 
-        async function handleInsert(sql) {
-            const match = sql.match(/INSERT INTO\s+(\w+)\s+VALUES\s*\((.*?)\)/i);
+        async function executarInsercao(sql) {
+            const match = sql.match(/INSERT INTO\s+(\w+)\s*(?:\(([^)]*)\)\s*)?VALUES\s*\((.*?)\)/is);
             if (!match) throw new Error('Sintaxe inválida para INSERIR');
-            
+
             const tableName = match[1].toLowerCase();
-            const valuesStr = match[2];
+            const explicitColumns = match[2] ? match[2].split(',').map(c => c.trim().toLowerCase()) : null;
+            const valuesStr = match[3];
             const values = valuesStr.split(',').map(v => {
                 v = v.trim();
                 if (v.startsWith('"') || v.startsWith("'")) {
@@ -455,21 +434,21 @@ SELECIONAR * DE usuarios;`,
                 }
                 return isNaN(v) ? v : Number(v);
             });
-            
+
             const table = db.table(tableName);
             if (!table) throw new Error(`Tabela ${tableName} não existe`);
-            
-            // Convert values array to object with column names
-            const columns = tableSchemas[tableName] || [];
+
+            // Usar colunas explícitas se fornecidas, caso contrário usar esquema armazenado
+            const columns = explicitColumns || tableSchemas[tableName] || [];
             const row = {};
             columns.forEach((col, i) => {
                 row[col] = values[i];
             });
-            
+
             await table.add(row);
         }
 
-        async function handleSelect(sql) {
+        async function executarSelecao(sql) {
             const match = sql.match(/SELECT\s+.*?\s+FROM\s+(\w+)/i);
             if (!match) throw new Error('Sintaxe inválida para SELECIONAR');
             
@@ -484,7 +463,7 @@ SELECIONAR * DE usuarios;`,
             return { data, schema };
         }
 
-        async function handleDelete(sql) {
+        async function executarExclusao(sql) {
             const match = sql.match(/DELETE FROM\s+(\w+)/i);
             if (!match) throw new Error('Sintaxe inválida para EXCLUIR');
             
@@ -495,22 +474,22 @@ SELECIONAR * DE usuarios;`,
             await table.clear();
         }
 
-        async function handleDropTable(sql) {
+        async function executarExclusaoTabela(sql) {
             const match = sql.match(/DROP TABLE\s+(\w+)/i);
             if (!match) throw new Error('Sintaxe inválida para REMOVER TABELA');
             
             const tableName = match[1].toLowerCase();
             
-            // Remove from schemas
+            // Remover de schemas armazenados
             delete tableSchemas[tableName];
             
-            // Close and recreate database without this table
+            // Fechar e recriar banco de dados sem a tabela removida
             db.close();
             
             const version = db.verno + 1;
             db = new Dexie('LinConEsDatabase');
             
-            // Build schema object for remaining tables
+            // Construir objeto de esquema para as tabelas restantes
             const schemaObj = { '_schemas': 'tableName' };
             for (let table in tableSchemas) {
                 schemaObj[table] = '++id';
@@ -520,12 +499,12 @@ SELECIONAR * DE usuarios;`,
             
             await db.open();
             
-            // Remove schema from _schemas table
+            // Remover esquema da tabela excluída
             await db.table('_schemas').where('tableName').equals(tableName).delete();
         }
 
-        async function resetDatabase() {
-            if (!confirm('Tem certeza que deseja deletar todo o banco de dados? Esta ação não pode ser desfeita.')) {
+        async function reiniciarBancoDeDados() {
+            if (!confirm('Tem certeza que deseja excluir todo o banco de dados? Esta ação não pode ser desfeita.')) {
                 return;
             }
             
@@ -533,7 +512,7 @@ SELECIONAR * DE usuarios;`,
                 db.close();
                 await Dexie.delete('LinConEsDatabase');
                 
-                // Recreate empty database
+                // Recriar banco de dados vazio
                 db = new Dexie('LinConEsDatabase');
                 tableSchemas = {};
                 
@@ -551,7 +530,7 @@ SELECIONAR * DE usuarios;`,
             }
         }
 
-        function displayResults(results, lincones, sql) {
+        function exibirResultados(results, lincones, sql) {
             const resultsDiv = document.getElementById('results');
             
             const { data, schema } = results;
@@ -567,7 +546,7 @@ SELECIONAR * DE usuarios;`,
                 return;
             }
             
-            // Use schema if available
+            // Usar colunas do esquema se disponível, caso contrário usar chaves do primeiro objeto de resultado (excluindo 'id')
             const columns = schema && schema.length > 0 ? schema : Object.keys(data[0]).filter(k => k !== 'id');
             
             const html = `
@@ -595,8 +574,12 @@ SELECIONAR * DE usuarios;`,
             resultsDiv.innerHTML = html;
         }
 
-        // Initialize on load
-        initializeDB();
+        function alternarTraducao(checkbox) {
+            document.getElementById('results').classList.toggle('ocultar-traducao', !checkbox.checked);
+        }
+
+        // Inicializar banco de dados ao carregar a página
+        inicializarBancoDeDados();
     </script>
 </body>
 </html>
